@@ -496,6 +496,11 @@ else
 	#
 	navigator start
 
+	pca9685 start -X -b 3
+	pca9685 start -X -b 2
+
+	work_item_example start
+
 	#
 	# Start a thermal calibration if required.
 	#

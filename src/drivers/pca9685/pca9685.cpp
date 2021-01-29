@@ -70,7 +70,12 @@
 #include <systemlib/err.h>
 
 #include <uORB/uORB.h>
-#include <uORB/topics/actuator_controls.h>
+// #include <uORB/topics/actuator_controls.h>
+#include <uORB/topics/rc_channels.h>
+#include <uORB/topics/actuator_armed.h>
+// #include <uORB/topics/vehicle_local_position.h>
+// #include <uORB/topics/landing_gear.h>
+#include <uORB/topics/manual_control_switches.h>
 
 #include <board_config.h>
 
@@ -140,10 +145,28 @@ private:
 
 	uint8_t			_msg[6];
 
-	int			_actuator_controls_sub;
-	struct actuator_controls_s  _actuator_controls;
-	uint16_t	    	_current_values[actuator_controls_s::NUM_ACTUATOR_CONTROLS]; /**< stores the current pwm output
-										  values as sent to the setPin() */
+	// int			_actuator_controls_sub;
+	// struct actuator_controls_s  _actuator_controls;
+	int			_rc_channels_sub;
+	struct rc_channels_s  _rc_channels;
+	int			_actuator_armed_sub;
+	struct actuator_armed_s  _actuator_armed;
+	// int			_vehicle_local_position_sub;
+	// struct vehicle_local_position_s  _vehicle_local_position;
+	// int			_landing_gear_sub;
+	// struct landing_gear_s  _landing_gear;
+	int			_manual_control_switches_sub;
+	struct manual_control_switches_s  _manual_control_switches;
+
+	// uint16_t	    	_current_values[actuator_controls_s::NUM_ACTUATOR_CONTROLS]; /**< stores the current pwm output
+	// 									  values as sent to the setPin() */
+	uint landing_gear_pin = 7;
+	uint LGup = (PCA9685_PWMCENTER +( .25f * M_PI_F * PCA9685_SCALE));
+	uint LGdown =(PCA9685_PWMCENTER +( -.25f * M_PI_F * PCA9685_SCALE));
+	uint DROP_EN = 2;
+	uint DROP = 0;
+	uint DEPLOY_EN = 3;
+	uint DEPLOY = 1;
 
 	bool _mode_on_initialized;  /** Set to true after the first call of i2cpwm in mode IOX_MODE_ON */
 
@@ -183,12 +206,14 @@ PCA9685::PCA9685(I2CSPIBusOption bus_option, int bus, int bus_frequency) :
 	_mode(IOX_MODE_ON),
 	_i2cpwm_interval(1_s / 60.0f),
 	_comms_errors(perf_alloc(PC_COUNT, MODULE_NAME": com_err")),
-	_actuator_controls_sub(-1),
-	_actuator_controls(),
+	// _actuator_controls_sub(-1),
+	// _actuator_controls(),
+	// _vehicle_local_position_sub(-1),
+	// _vehicle_local_position(),
 	_mode_on_initialized(false)
 {
 	memset(_msg, 0, sizeof(_msg));
-	memset(_current_values, 0, sizeof(_current_values));
+	//memset(_current_values, 0, sizeof(_current_values));
 }
 
 int
@@ -232,36 +257,150 @@ PCA9685::RunImpl()
 	} else {
 		if (!_mode_on_initialized) {
 			/* Subscribe to actuator control 2 (payload group for gimbal) */
-			_actuator_controls_sub = orb_subscribe(ORB_ID(actuator_controls_2));
+			//_actuator_controls_sub = orb_subscribe(ORB_ID(actuator_controls_2));
 			/* set the uorb update interval lower than the driver pwm interval */
-			orb_set_interval(_actuator_controls_sub, 1000.0f / PCA9685_PWMFREQ - 5);
+			// orb_set_interval(_actuator_controls_sub, 1000.0f / PCA9685_PWMFREQ - 5);
+			/* Subscribe to rc_channels (directly from transmitter) */
+			_rc_channels_sub = orb_subscribe(ORB_ID(rc_channels));
+			_actuator_armed_sub = orb_subscribe(ORB_ID(actuator_armed));
+			_manual_control_switches_sub = orb_subscribe(ORB_ID(manual_control_switches));
+			/* set the uorb update interval lower than the driver pwm interval */
+			orb_set_interval(_manual_control_switches_sub, 1000.0f / PCA9685_PWMFREQ - 5);
 
 			_mode_on_initialized = true;
 		}
 
 		/* Read the servo setpoints from the actuator control topics (gimbal) */
 		bool updated;
-		orb_check(_actuator_controls_sub, &updated);
+		//orb_check(_actuator_controls_sub, &updated);
+		orb_check(_manual_control_switches_sub, &updated);
+
+		//setPin(4, 4096);
 
 		if (updated) {
-			orb_copy(ORB_ID(actuator_controls_2), _actuator_controls_sub, &_actuator_controls);
+			////Begin Sarcose Logic////
+			orb_copy(ORB_ID(rc_channels), _rc_channels_sub, &_rc_channels);
+			orb_copy(ORB_ID(actuator_armed), _actuator_armed_sub, &_actuator_armed);
+			// orb_copy(ORB_ID(vehicle_local_position), _vehicle_local_position_sub, &_vehicle_local_position);
+			// orb_copy(ORB_ID(landing_gear), _landing_gear_sub, &_landing_gear);
+			orb_copy(ORB_ID(manual_control_switches), _manual_control_switches_sub, &_manual_control_switches);
 
-			for (int i = 0; i < actuator_controls_s::NUM_ACTUATOR_CONTROLS; i++) {
-				/* Scale the controls to PWM, first multiply by pi to get rad,
-				 * the control[i] values are on the range -1 ... 1 */
-				uint16_t new_value = PCA9685_PWMCENTER +
-						     (_actuator_controls.control[i] * M_PI_F * PCA9685_SCALE);
-				DEVICE_DEBUG("%d: current: %u, new %u, control %.2f", i, _current_values[i], new_value,
-					     (double)_actuator_controls.control[i]);
+			//Flir Aux Passthrough
+			// uint16_t new_value = PCA9685_PWMCENTER +
+			// 						     (_manual_control_setpoint.aux1 * M_PI_F * PCA9685_SCALE);
+			// setPin(12, new_value);
+			// new_value = PCA9685_PWMCENTER +
+			// 						     (_manual_control_setpoint.aux2 * M_PI_F * PCA9685_SCALE);
+			// setPin(13, new_value);
+			// new_value = PCA9685_PWMCENTER +
+			// 						     (_manual_control_setpoint.aux3 * M_PI_F * PCA9685_SCALE);
+			// setPin(14, new_value);
 
-				if (new_value != _current_values[i] &&
-				    new_value >= PCA9685_PWMMIN &&
-				    new_value <= PCA9685_PWMMAX) {
-					/* This value was updated, send the command to adjust the PWM value */
-					setPin(i, new_value);
-					_current_values[i] = new_value;
+
+
+			//This section will control the Sarcose drone landing gear without safeties
+			// if (_rc_channels.channels[5] > 0) {
+			// 	setPin(landing_gear_pin, LGup);
+			// }
+			// else {
+			// 	setPin(landing_gear_pin, LGdown);
+			// }
+
+			if (!_actuator_armed.armed) {
+				setPin(landing_gear_pin, LGdown);
+			}
+			else {
+				if (_manual_control_switches.gear_switch < 2) {
+					setPin(landing_gear_pin, LGup);
+				}
+				else {
+					setPin(landing_gear_pin, LGdown);
 				}
 			}
+
+			// if (_vehicle_local_position.z > -4.f && !_actuator_armed.armed) {
+			// 	setPin(landing_gear_pin, LGdown);
+			// }
+			// else {
+			// 	if (_landing_gear.landing_gear > 0 || _vehicle_local_position.z < -4.f) {
+			// 		setPin(landing_gear_pin, LGup);
+			// 	}
+			// 	else{
+			// 		setPin(landing_gear_pin, LGdown);
+			// 	}
+			// }
+
+			/***BEGIN Sarcos Payload Logic***/
+			//NOTE: the RC channels are -1 to 1
+
+
+			if (_rc_channels.channels[7] > 0 && _rc_channels.channels[7] < .2f){ // Need to add a boolean for safety
+				setPin(DROP_EN, 2053); //~50% duty cycle
+				setPin(DROP, 0); //This is fully on
+			}
+			else if (_rc_channels.channels[7] > .85f) {
+				setPin(DROP_EN, 2053); //~50% duty cycle
+				setPin(DROP, 4096); //This is fully on
+			}
+			else {
+				setPin(DROP, 0);
+				setPin(DROP_EN, 0);
+			}
+			if (_rc_channels.channels[6] > 0 && _rc_channels.channels[6] < .2f){ // Need to add a boolean for safety
+				setPin(DEPLOY_EN, 2053); //~50% duty cycle
+				setPin(DEPLOY, 0);
+			}
+			else if (_rc_channels.channels[6] > .85f) {
+				setPin(DEPLOY_EN, 2053); //~50% duty cycle
+				setPin(DEPLOY, 4096); //This is fully on
+			}
+			else {
+				setPin(DEPLOY, 0);
+				setPin(DEPLOY_EN, 0);
+			}
+			////EndSarcose Logic////
+
+			// for (int i = 0; i < actuator_controls_s::NUM_ACTUATOR_CONTROLS; i++) {
+			// 	/* Scale the controls to PWM, first multiply by pi to get rad,
+			// 	 * the control[i] values are on the range -1 ... 1 */
+			// 	uint16_t new_value = PCA9685_PWMCENTER +
+			// 			     (_actuator_controls.control[i] * M_PI_F * PCA9685_SCALE);
+			// 	DEVICE_DEBUG("%d: current: %u, new %u, control %.2f", i, _current_values[i], new_value,
+			// 		     (double)_actuator_controls.control[i]);
+
+			// 	if (new_value != _current_values[i] &&
+			// 	    new_value >= PCA9685_PWMMIN &&
+			// 	    new_value <= PCA9685_PWMMAX) {
+			// 		/* This value was updated, send the command to adjust the PWM value */
+			// 		setPin(i, new_value);
+			// 		_current_values[i] = new_value;
+			// 	}
+			// }
+
+			// if (_manual_control_setpoint.aux1 > 0) {
+			// 	setPin(0, 0);
+			// }else {
+			// 	setPin(0, 4096);
+			// }
+
+			// orb_copy(ORB_ID(actuator_controls_2), _actuator_controls_sub, &_actuator_controls);
+
+			// for (int i = 0; i < actuator_controls_s::NUM_ACTUATOR_CONTROLS; i++) {
+			// 	/* Scale the controls to PWM, first multiply by pi to get rad,
+			// 	 * the control[i] values are on the range -1 ... 1 */
+			// 	uint16_t new_value = PCA9685_PWMCENTER +
+			// 			     (_actuator_controls.control[i] * M_PI_F * PCA9685_SCALE);
+			// 	DEVICE_DEBUG("%d: current: %u, new %u, control %.2f", i, _current_values[i], new_value,
+			// 		     (double)_actuator_controls.control[i]);
+
+			// 	if (new_value != _current_values[i] &&
+			// 	    new_value >= PCA9685_PWMMIN &&
+			// 	    new_value <= PCA9685_PWMMAX) {
+			// 		/* This value was updated, send the command to adjust the PWM value */
+			// 		setPin(i, new_value);
+			// 		_current_values[i] = new_value;
+			// 	}
+			// }
 		}
 	}
 

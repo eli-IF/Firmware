@@ -14,6 +14,7 @@ px4_add_board(
 		TEL1:/dev/ttyS6 # UART7  / J5
 		TEL2:/dev/ttyS4 # UART5  / J1
 		TEL3:/dev/ttyS1 # USART2 / J4
+		TEL4:/dev/ttyS3 # UART4 / J6
 	DRIVERS
 		adc/board_adc
 		barometer # all available barometer drivers

@@ -42,8 +42,14 @@
 #include <uORB/topics/orb_test.h>
 #include <uORB/topics/sensor_accel.h>
 #include <uORB/Publication.hpp>
+#include <uORB/topics/actuator_controls.h>
+
+#include <battery/battery.h>
+
 #include <uORB/Subscription.hpp>
 #include <uORB/SubscriptionCallback.hpp>
+#include <uORB/topics/smart_battery_payload.h>
+#include <uORB/topics/battery_status.h>
 
 class WorkItemExample : public ModuleBase<WorkItemExample>, public ModuleParams, public px4::ScheduledWorkItem
 {
@@ -71,6 +77,22 @@ private:
 
 	uORB::SubscriptionData<sensor_accel_s> _sensor_accel_sub{ORB_ID(sensor_accel)};
 
+	battery_status_s	_bat_status{};
+
+	Battery 		_battery;
+
+	uORB::Subscription	_actuators_sub{ORB_ID(actuator_controls_0)};
+	actuator_controls_s	_actuator_controls{};
+
+	uORB::Publication<battery_status_s>		_bat_pub_topic{ORB_ID(battery_status)};
+	uORB::Subscription	_smart_battery_payload_sub{ORB_ID(smart_battery_payload)}; // Added to support UAVCAN smart battery
+
+		// ----- BEGIN Smart Battery methods -----
+	  void publishSmartBatteryStatusMsg(uint8_t smart_battery_buffer[]);
+	  int getValueFromBatteryBuffer(uint8_t buffer[], int start_index, int num_bytes);
+	  void printBatteryStatus(battery_status_s status);
+	  uint16_t max_cap = 0;
+	  // ----- END Smart Battery methods -----
 	perf_counter_t	_loop_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")};
 	perf_counter_t	_loop_interval_perf{perf_alloc(PC_INTERVAL, MODULE_NAME": interval")};
 };
